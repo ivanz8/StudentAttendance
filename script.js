@@ -599,11 +599,12 @@ async function recordAttendance(type) {
     const success = await db.saveAttendance(record);
     if (success) {
         try {
-            // Send email notification
-            const response = await fetch('http://localhost:3000/send-email', {
+            // Using your Railway URL
+            const response = await fetch('https://nodetendance-production.up.railway.app/send-email', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
                 },
                 body: JSON.stringify({
                     studentName: student.name,
@@ -627,7 +628,7 @@ async function recordAttendance(type) {
             record.notificationSent = 'Failed to send email';
         }
 
-        // Check and update both button states after recording attendance
+        // Check and update button states after recording attendance
         const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
         updateAttendanceButtons(hasEntry, hasExit);
 
