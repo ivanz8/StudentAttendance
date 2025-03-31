@@ -593,11 +593,40 @@ async function recordAttendance(type) {
         date: date,
         time: time,
         type: type,
-        notificationSent: 'Email sent to ' + student.guardianEmail
+        notificationSent: 'Pending...'
     };
 
     const success = await db.saveAttendance(record);
     if (success) {
+        try {
+            // Send email notification
+            const response = await fetch('http://localhost:3000/send-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    studentName: student.name,
+                    type: type,
+                    guardianEmail: student.guardianEmail,
+                    time: time,
+                    date: date
+                })
+            });
+
+            if (response.ok) {
+                record.notificationSent = 'Email sent to ' + student.guardianEmail;
+            } else {
+                record.notificationSent = 'Failed to send email';
+            }
+
+            // Update the attendance record with email status
+            await db.saveAttendance(record);
+        } catch (error) {
+            console.error('Error sending notification:', error);
+            record.notificationSent = 'Failed to send email';
+        }
+
         // Check and update both button states after recording attendance
         const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
         updateAttendanceButtons(hasEntry, hasExit);
