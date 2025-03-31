@@ -414,6 +414,70 @@ function formatScheduleForDisplay(schedule) {
     return 'N/A';
 }
 
+// Function to check today's attendance status for a student
+async function checkTodayAttendance(studentNumber) {
+    try {
+        // Get all attendance records from Firebase
+        const snapshot = await database.ref('attendance').once('value');
+        const attendance = snapshot.val() || [];
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Convert Firebase object to array if necessary
+        const records = Array.isArray(attendance) ? attendance : Object.values(attendance);
+        
+        // Filter today's records for this specific student
+        const todayRecords = records.filter(record => 
+            record.studentNumber === studentNumber && 
+            record.date === today
+        );
+
+        const hasEntry = todayRecords.some(record => record.type === 'entry');
+        const hasExit = todayRecords.some(record => record.type === 'exit');
+
+        return { hasEntry, hasExit };
+    } catch (error) {
+        console.error('Error checking attendance:', error);
+        return { hasEntry: false, hasExit: false };
+    }
+}
+
+// Function to update button states
+function updateAttendanceButtons(hasEntry, hasExit) {
+    const entryButton = document.getElementById('entryButton');
+    const exitButton = document.getElementById('exitButton');
+
+    // Update button states based on database status
+    entryButton.disabled = hasEntry;
+    exitButton.disabled = hasExit;
+
+    // Add visual feedback for disabled state
+    [entryButton, exitButton].forEach(button => {
+        if (button.disabled) {
+            button.style.opacity = '0.5';
+            button.style.cursor = 'not-allowed';
+            button.title = 'Already recorded for today';
+        } else {
+            button.style.opacity = '1';
+            button.style.cursor = 'pointer';
+            button.title = '';
+        }
+    });
+
+    // Update status indicator
+    const statusIndicator = document.getElementById('studentStatus');
+    if (hasEntry && hasExit) {
+        statusIndicator.textContent = 'Current Status: Completed attendance for today';
+        statusIndicator.style.color = '#155724';
+    } else if (hasEntry) {
+        statusIndicator.textContent = 'Current Status: Entered, pending exit';
+        statusIndicator.style.color = '#856404';
+    } else {
+        statusIndicator.textContent = 'Current Status: Not Present';
+        statusIndicator.style.color = '#721c24';
+    }
+}
+
 // Function to search for a student
 async function searchStudent() {
     const studentNumber = document.getElementById('searchStudentNumber').value.trim();
@@ -434,23 +498,39 @@ async function searchStudent() {
         return;
     }
 
-    const students = await db.getStudents();
-    if (!students[studentNumber]) {
-        messageElement.textContent = 'Student number not found in the system.';
+    try {
+        // Get student data from Firebase
+        const studentSnapshot = await database.ref(`students/${studentNumber}`).once('value');
+        const student = studentSnapshot.val();
+
+        if (!student) {
+            messageElement.textContent = 'Student number not found in the system.';
+            messageElement.className = 'message error';
+            messageElement.style.display = 'block';
+            return;
+        }
+
+        // Display student information
+        document.getElementById('studentName').textContent = student.name;
+        document.getElementById('studentDept').textContent = student.college;
+        document.getElementById('studentProgram').textContent = student.program;
+        document.getElementById('studentYear').textContent = student.year;
+        scheduleDisplay.textContent = formatScheduleForDisplay(student.schedule);
+        attendanceStatus.classList.remove('hidden');
+
+        // Check current attendance status from database
+        const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
+        updateAttendanceButtons(hasEntry, hasExit);
+
+        await loadAttendanceHistory(studentNumber);
+        attendanceHistory.classList.remove('hidden');
+
+    } catch (error) {
+        console.error('Error searching student:', error);
+        messageElement.textContent = 'Error loading student data. Please try again.';
         messageElement.className = 'message error';
         messageElement.style.display = 'block';
-        return;
     }
-
-    const student = students[studentNumber];
-    document.getElementById('studentName').textContent = student.name;
-    document.getElementById('studentDept').textContent = student.college;
-    document.getElementById('studentProgram').textContent = student.program;
-    document.getElementById('studentYear').textContent = student.year;
-    scheduleDisplay.textContent = formatScheduleForDisplay(student.schedule);
-    attendanceStatus.classList.remove('hidden');
-    await loadAttendanceHistory(studentNumber);
-    attendanceHistory.classList.remove('hidden');
 }
 
 // Record Entry/Exit Buttons
@@ -459,10 +539,25 @@ document.getElementById('exitButton').addEventListener('click', () => recordAtte
 
 // Function to record attendance
 async function recordAttendance(type) {
+    const button = type === 'entry' ? document.getElementById('entryButton') : document.getElementById('exitButton');
+    
+    // Immediately disable the button
+    button.disabled = true;
+    button.style.opacity = '0.5';
+    button.style.cursor = 'not-allowed';
+    button.title = 'Already used today';
+
     const studentNumber = document.getElementById('searchStudentNumber').value.trim();
     const students = await db.getStudents();
     const student = students[studentNumber];
-    if (!student) return;
+    if (!student) {
+        // Re-enable button if student not found
+        button.disabled = false;
+        button.style.opacity = '1';
+        button.style.cursor = 'pointer';
+        button.title = '';
+        return;
+    }
 
     const now = new Date();
     const record = {
@@ -479,6 +574,10 @@ async function recordAttendance(type) {
 
     const success = await db.saveAttendance(record);
     if (success) {
+        // Check and update both button states after recording attendance
+        const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
+        updateAttendanceButtons(hasEntry, hasExit);
+
         await loadAttendanceHistory(studentNumber);
         const messageElement = document.getElementById('studentStatusMessage');
         messageElement.textContent = `Attendance ${type} recorded successfully! Notification email sent to guardian.`;
@@ -486,6 +585,12 @@ async function recordAttendance(type) {
         messageElement.style.display = 'block';
         setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
     } else {
+        // Re-enable button if save failed
+        button.disabled = false;
+        button.style.opacity = '1';
+        button.style.cursor = 'pointer';
+        button.title = '';
+        
         const messageElement = document.getElementById('studentStatusMessage');
         messageElement.textContent = 'Error recording attendance. Please try again.';
         messageElement.className = 'message error';
@@ -495,23 +600,43 @@ async function recordAttendance(type) {
 
 // Function to load attendance history for a student
 async function loadAttendanceHistory(studentNumber) {
-    const attendance = await db.getAttendance();
-    const studentRecords = attendance.filter(record => record.studentNumber === studentNumber);
-    const tableBody = document.getElementById('attendanceHistoryBody');
-    tableBody.innerHTML = '';
+    try {
+        // Get attendance records from Firebase
+        const snapshot = await database.ref('attendance').once('value');
+        const attendanceData = snapshot.val() || {};
+        
+        // Convert Firebase object to array and filter for the student
+        const records = Object.values(attendanceData).filter(record => 
+            record && record.studentNumber === studentNumber
+        );
 
-    if (studentRecords.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No attendance records found</td></tr>';
-    } else {
-        studentRecords.slice(0, 10).forEach(record => {
-            const row = tableBody.insertRow();
-            row.innerHTML = `
-                <td>${record.date}</td>
-                <td>${record.time}</td>
-                <td class="${record.type}">${record.type.charAt(0).toUpperCase() + record.type.slice(1)}</td>
-                <td>${record.notificationSent}</td>
-            `;
+        // Sort records by date and time, newest first
+        records.sort((a, b) => {
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateB - dateA;
         });
+
+        const tableBody = document.getElementById('attendanceHistoryBody');
+        tableBody.innerHTML = '';
+
+        if (records.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No attendance records found</td></tr>';
+        } else {
+            records.forEach(record => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td>${record.date}</td>
+                    <td>${record.time}</td>
+                    <td class="${record.type}">${record.type.charAt(0).toUpperCase() + record.type.slice(1)}</td>
+                    <td>${record.notificationSent}</td>
+                `;
+            });
+        }
+    } catch (error) {
+        console.error('Error loading attendance history:', error);
+        const tableBody = document.getElementById('attendanceHistoryBody');
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Error loading attendance history</td></tr>';
     }
 }
 

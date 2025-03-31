@@ -136,6 +136,38 @@ button.delete-entry {
     margin-left: 5px; /* Space next to inputs */
 }
 
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    position: relative;
+}
+
+button:disabled:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
+}
+
+.attendance-history table {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.attendance-history th, 
+.attendance-history td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
 
 table {
     width: 100%;
