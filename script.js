@@ -414,22 +414,46 @@ function formatScheduleForDisplay(schedule) {
     return 'N/A';
 }
 
+// Function to get current Philippine date and time
+function getPhilippineDateTime() {
+    const options = {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true // This will show time in 12-hour format with AM/PM
+    };
+
+    const now = new Date();
+    const phTime = now.toLocaleTimeString('en-PH', options);
+    const phDate = now.toLocaleDateString('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+
+    return {
+        date: phDate.split('/').reverse().join('-'), // Convert to YYYY-MM-DD format
+        time: phTime
+    };
+}
+
 // Function to check today's attendance status for a student
 async function checkTodayAttendance(studentNumber) {
     try {
-        // Get all attendance records from Firebase
         const snapshot = await database.ref('attendance').once('value');
         const attendance = snapshot.val() || [];
         
-        const today = new Date().toISOString().split('T')[0];
+        const { date } = getPhilippineDateTime(); // Get current PH date
         
-        // Convert Firebase object to array if necessary
         const records = Array.isArray(attendance) ? attendance : Object.values(attendance);
         
-        // Filter today's records for this specific student
         const todayRecords = records.filter(record => 
             record.studentNumber === studentNumber && 
-            record.date === today
+            record.date === date
         );
 
         const hasEntry = todayRecords.some(record => record.type === 'entry');
@@ -559,15 +583,15 @@ async function recordAttendance(type) {
         return;
     }
 
-    const now = new Date();
+    const { date, time } = getPhilippineDateTime();
     const record = {
         studentNumber: studentNumber,
         name: student.name,
         college: student.college,
         program: student.program,
         year: student.year,
-        date: now.toISOString().split('T')[0],
-        time: now.toLocaleTimeString(),
+        date: date,
+        time: time,
         type: type,
         notificationSent: 'Email sent to ' + student.guardianEmail
     };
