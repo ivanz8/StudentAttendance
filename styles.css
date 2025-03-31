@@ -137,9 +137,10 @@ button.delete-entry {
 }
 
 button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    position: relative;
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    user-select: none !important;
 }
 
 button:disabled:hover::after {
@@ -155,6 +156,12 @@ button:disabled:hover::after {
     font-size: 12px;
     white-space: nowrap;
     z-index: 1000;
+}
+
+button[data-loading="true"] {
+    background-color: #6c757d !important;
+    opacity: 0.7 !important;
+    cursor: not-allowed !important;
 }
 
 .attendance-history table {
@@ -395,4 +402,21 @@ tr:hover {
     background-color: #f8d7da;
     color: #721c24;
     border: 1px solid #f5c6cb;
+}
+
+.status-actions button {
+    min-width: 80px;
+}
+
+#entryButton {
+    background-color: #28a745;
+}
+
+#exitButton {
+    background-color: #dc3545;
+}
+
+#entryButton:disabled,
+#exitButton:disabled {
+    background-color: #6c757d;
 }

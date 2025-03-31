@@ -471,34 +471,43 @@ function updateAttendanceButtons(hasEntry, hasExit) {
     const entryButton = document.getElementById('entryButton');
     const exitButton = document.getElementById('exitButton');
 
-    // Update button states based on database status
-    entryButton.disabled = hasEntry;
-    exitButton.disabled = hasExit;
+    // Remove existing event listeners by cloning and replacing buttons
+    const newEntryButton = entryButton.cloneNode(true);
+    const newExitButton = exitButton.cloneNode(true);
+    entryButton.parentNode.replaceChild(newEntryButton, entryButton);
+    exitButton.parentNode.replaceChild(newExitButton, exitButton);
 
-    // Add visual feedback for disabled state
-    [entryButton, exitButton].forEach(button => {
+    // Update button states and text
+    newEntryButton.disabled = hasEntry;
+    newExitButton.disabled = hasExit;
+    
+    // Set correct text for each button
+    newEntryButton.textContent = 'IN';
+    newExitButton.textContent = 'OUT';
+
+    // Add visual feedback and prevent clicks
+    [newEntryButton, newExitButton].forEach(button => {
         if (button.disabled) {
             button.style.opacity = '0.5';
             button.style.cursor = 'not-allowed';
+            button.style.pointerEvents = 'none';
             button.title = 'Already recorded for today';
+            button.dataset.loading = 'false';
         } else {
             button.style.opacity = '1';
             button.style.cursor = 'pointer';
+            button.style.pointerEvents = 'auto';
             button.title = '';
+            button.dataset.loading = 'false';
         }
     });
 
-    // Update status indicator
-    const statusIndicator = document.getElementById('studentStatus');
-    if (hasEntry && hasExit) {
-        statusIndicator.textContent = 'Current Status: Completed attendance for today';
-        statusIndicator.style.color = '#155724';
-    } else if (hasEntry) {
-        statusIndicator.textContent = 'Current Status: Entered, pending exit';
-        statusIndicator.style.color = '#856404';
-    } else {
-        statusIndicator.textContent = 'Current Status: Not Present';
-        statusIndicator.style.color = '#721c24';
+    // Only add event listeners to enabled buttons
+    if (!hasEntry) {
+        newEntryButton.addEventListener('click', () => recordAttendance('entry'));
+    }
+    if (!hasExit) {
+        newExitButton.addEventListener('click', () => recordAttendance('exit'));
     }
 }
 
@@ -557,49 +566,45 @@ async function searchStudent() {
     }
 }
 
-// Record Entry/Exit Buttons
-document.getElementById('entryButton').addEventListener('click', () => recordAttendance('entry'));
-document.getElementById('exitButton').addEventListener('click', () => recordAttendance('exit'));
-
 // Function to record attendance
 async function recordAttendance(type) {
     const button = type === 'entry' ? document.getElementById('entryButton') : document.getElementById('exitButton');
+    const otherButton = type === 'entry' ? document.getElementById('exitButton') : document.getElementById('entryButton');
     
-    // Immediately disable the button
-    button.disabled = true;
-    button.style.opacity = '0.5';
-    button.style.cursor = 'not-allowed';
-    button.title = 'Already used today';
-
-    const studentNumber = document.getElementById('searchStudentNumber').value.trim();
-    const students = await db.getStudents();
-    const student = students[studentNumber];
-    if (!student) {
-        // Re-enable button if student not found
-        button.disabled = false;
-        button.style.opacity = '1';
-        button.style.cursor = 'pointer';
-        button.title = '';
+    if (button.disabled || button.dataset.loading === 'true') {
         return;
     }
 
-    const { date, time } = getPhilippineDateTime();
-    const record = {
-        studentNumber: studentNumber,
-        name: student.name,
-        college: student.college,
-        program: student.program,
-        year: student.year,
-        date: date,
-        time: time,
-        type: type,
-        notificationSent: 'Pending...'
-    };
+    // Set loading state only for the clicked button
+    button.disabled = true;
+    button.dataset.loading = 'true';
+    button.textContent = 'Processing...';
 
-    const success = await db.saveAttendance(record);
-    if (success) {
+    try {
+        const studentNumber = document.getElementById('searchStudentNumber').value.trim();
+        const students = await db.getStudents();
+        const student = students[studentNumber];
+        if (!student) {
+            throw new Error('Student not found');
+        }
+
+        const { date, time } = getPhilippineDateTime();
+        
+        // First save the attendance record
+        const attendanceRef = await database.ref('attendance').push({
+            studentNumber: studentNumber,
+            name: student.name,
+            college: student.college,
+            program: student.program,
+            year: student.year,
+            date: date,
+            time: time,
+            type: type,
+            notificationSent: 'Pending...'
+        });
+
         try {
-            // Using your Railway URL
+            // Send email
             const response = await fetch('https://nodetendance-production.up.railway.app/send-email', {
                 method: 'POST',
                 headers: {
@@ -615,35 +620,44 @@ async function recordAttendance(type) {
                 })
             });
 
+            // Update the notification status in the database
             if (response.ok) {
-                record.notificationSent = 'Email sent to ' + student.guardianEmail;
+                await database.ref(`attendance/${attendanceRef.key}`).update({
+                    notificationSent: 'Email sent to ' + student.guardianEmail
+                });
             } else {
-                record.notificationSent = 'Failed to send email';
+                await database.ref(`attendance/${attendanceRef.key}`).update({
+                    notificationSent: 'Failed to send email'
+                });
             }
 
-            // Update the attendance record with email status
-            await db.saveAttendance(record);
+            // Refresh the attendance history display
+            await loadAttendanceHistory(studentNumber);
+            
+            // Update button states
+            const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
+            updateAttendanceButtons(hasEntry, hasExit);
+
+            // Success message
+            const messageElement = document.getElementById('studentStatusMessage');
+            messageElement.textContent = `Attendance ${type} recorded successfully!`;
+            messageElement.className = 'message success';
+            messageElement.style.display = 'block';
+            setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
+
         } catch (error) {
             console.error('Error sending notification:', error);
-            record.notificationSent = 'Failed to send email';
+            // Reset button to original state if there's an error
+            button.disabled = false;
+            button.dataset.loading = 'false';
+            button.textContent = type === 'entry' ? 'IN' : 'OUT';
         }
-
-        // Check and update button states after recording attendance
-        const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
-        updateAttendanceButtons(hasEntry, hasExit);
-
-        await loadAttendanceHistory(studentNumber);
-        const messageElement = document.getElementById('studentStatusMessage');
-        messageElement.textContent = `Attendance ${type} recorded successfully! Notification email sent to guardian.`;
-        messageElement.className = 'message success';
-        messageElement.style.display = 'block';
-        setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
-    } else {
-        // Re-enable button if save failed
+    } catch (error) {
+        console.error('Error recording attendance:', error);
+        // Reset only the clicked button on error
         button.disabled = false;
-        button.style.opacity = '1';
-        button.style.cursor = 'pointer';
-        button.title = '';
+        button.dataset.loading = 'false';
+        button.textContent = type === 'entry' ? 'IN' : 'OUT';
         
         const messageElement = document.getElementById('studentStatusMessage');
         messageElement.textContent = 'Error recording attendance. Please try again.';
