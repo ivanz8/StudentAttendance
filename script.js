@@ -518,6 +518,7 @@ async function searchStudent() {
     const attendanceStatus = document.getElementById('attendanceStatus');
     const attendanceHistory = document.getElementById('attendanceHistory');
     const scheduleDisplay = document.getElementById('studentSchedule');
+    const statusIndicator = document.getElementById('studentStatus');
 
     messageElement.style.display = 'none';
     attendanceStatus.classList.add('hidden');
@@ -553,6 +554,20 @@ async function searchStudent() {
 
         // Check current attendance status from database
         const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
+        
+        // Update status text and color
+        if (hasEntry && hasExit) {
+            statusIndicator.textContent = 'Current Status: Completed attendance for today';
+            statusIndicator.style.color = '#155724';
+        } else if (hasEntry) {
+            statusIndicator.textContent = 'Current Status: Entered, pending exit';
+            statusIndicator.style.color = '#856404';
+        } else {
+            statusIndicator.textContent = 'Current Status: Not Present';
+            statusIndicator.style.color = '#721c24';
+        }
+
+        // Update button states
         updateAttendanceButtons(hasEntry, hasExit);
 
         await loadAttendanceHistory(studentNumber);
@@ -569,7 +584,7 @@ async function searchStudent() {
 // Function to record attendance
 async function recordAttendance(type) {
     const button = type === 'entry' ? document.getElementById('entryButton') : document.getElementById('exitButton');
-    const otherButton = type === 'entry' ? document.getElementById('exitButton') : document.getElementById('entryButton');
+    const statusIndicator = document.getElementById('studentStatus');
     
     if (button.disabled || button.dataset.loading === 'true') {
         return;
@@ -603,8 +618,11 @@ async function recordAttendance(type) {
             notificationSent: 'Pending...'
         });
 
+        // Get the key of the saved record
+        const recordKey = attendanceRef.key;
+
         try {
-            // Send email
+            // Send email and handle notification status
             const response = await fetch('https://nodetendance-production.up.railway.app/send-email', {
                 method: 'POST',
                 headers: {
@@ -620,25 +638,35 @@ async function recordAttendance(type) {
                 })
             });
 
-            // Update the notification status in the database
             if (response.ok) {
-                await database.ref(`attendance/${attendanceRef.key}`).update({
+                await database.ref(`attendance/${recordKey}`).update({
                     notificationSent: 'Email sent to ' + student.guardianEmail
                 });
             } else {
-                await database.ref(`attendance/${attendanceRef.key}`).update({
+                await database.ref(`attendance/${recordKey}`).update({
                     notificationSent: 'Failed to send email'
                 });
             }
 
-            // Refresh the attendance history display
-            await loadAttendanceHistory(studentNumber);
-            
-            // Update button states
+            // Check current status and update immediately
             const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
-            updateAttendanceButtons(hasEntry, hasExit);
+            
+            // Update status text and color immediately
+            if (hasEntry && hasExit) {
+                statusIndicator.textContent = 'Current Status: Completed attendance for today';
+                statusIndicator.style.color = '#155724';
+            } else if (hasEntry) {
+                statusIndicator.textContent = 'Current Status: Entered, pending exit';
+                statusIndicator.style.color = '#856404';
+            } else {
+                statusIndicator.textContent = 'Current Status: Not Present';
+                statusIndicator.style.color = '#721c24';
+            }
 
-            // Success message
+            // Update buttons and attendance history
+            updateAttendanceButtons(hasEntry, hasExit);
+            await loadAttendanceHistory(studentNumber);
+
             const messageElement = document.getElementById('studentStatusMessage');
             messageElement.textContent = `Attendance ${type} recorded successfully!`;
             messageElement.className = 'message success';
@@ -647,18 +675,12 @@ async function recordAttendance(type) {
 
         } catch (error) {
             console.error('Error sending notification:', error);
-            // Reset button to original state if there's an error
-            button.disabled = false;
-            button.dataset.loading = 'false';
-            button.textContent = type === 'entry' ? 'IN' : 'OUT';
+            await database.ref(`attendance/${recordKey}`).update({
+                notificationSent: 'Failed to send email'
+            });
         }
     } catch (error) {
         console.error('Error recording attendance:', error);
-        // Reset only the clicked button on error
-        button.disabled = false;
-        button.dataset.loading = 'false';
-        button.textContent = type === 'entry' ? 'IN' : 'OUT';
-        
         const messageElement = document.getElementById('studentStatusMessage');
         messageElement.textContent = 'Error recording attendance. Please try again.';
         messageElement.className = 'message error';
