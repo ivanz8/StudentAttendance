@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Attendance Tracking System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="header">School Attendance Tracking System</div>
+
+    <div class="container">
+        <div class="tabs">
+            <div class="tab active" data-tab="attendance">Attendance</div>
+            <div class="tab" data-tab="registration">Registration</div>
+            <div class="tab" data-tab="records">Records</div>
+        </div>
+
+        <!-- Attendance Tab -->
+        <div id="attendance" class="tab-content active">
+            <h2>Student Attendance</h2>
+
+            <div class="student-search">
+                <input type="text" id="searchStudentNumber" placeholder="Enter Student Number">
+                <button id="searchStudentButton" class="search-button">Enter</button>
+            </div>
+
+            <div id="studentStatusMessage" class="message"></div>
+
+            <div id="attendanceStatus" class="attendance-status hidden">
+                <div class="student-info">
+                    <h3 id="studentName">Student Name</h3>
+                    <p id="studentDetails">Department: <span id="studentDept"></span> | Program: <span id="studentProgram"></span> | Year: <span id="studentYear"></span></p>
+                    <p id="studentStatus" class="status-indicator">Current Status: Not Present</p>
+                    <p>Class Schedule:</p>
+                    <div id="studentSchedule" class="schedule-display"></div>
+                </div>
+                <div class="status-actions">
+                    <button id="entryButton" class="success">Record Entry</button>
+                    <button id="exitButton" class="danger">Record Exit</button>
+                </div>
+            </div>
+
+            <div id="attendanceHistory" class="attendance-history hidden">
+                <h3>Recent Attendance</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Notification Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendanceHistoryBody">
+                        <!-- Attendance history will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Registration Tab -->
+        <div id="registration" class="tab-content">
+            <h2>Student Registration</h2>
+
+            <div id="registrationMessage" class="message"></div>
+
+            <div class="form-group">
+                <label for="regStudentNumber">Student Number*</label>
+                <input type="text" id="regStudentNumber" placeholder="Enter student number" required>
+            </div>
+
+            <div class="form-group">
+                <label for="regName">Full Name*</label>
+                <input type="text" id="regName" placeholder="Enter full name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="regCollege">College*</label>
+                <select id="regCollege" required>
+                    <option value="">Select College</option>
+                    <option value="CEA">College of Engineering and Architecture (CEA)</option>
+                    <option value="CAS">College of Arts and Sciences (CAS)</option>
+                    <option value="CBEA">College of Business and Economic Affairs (CBEA)</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="programContainer" style="display: none;">
+                <label for="regProgram">Program*</label>
+                <select id="regProgram" required>
+                    <option value="">Select Program</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="yearContainer" style="display: none;">
+                <label for="regYear">Year Level*</label>
+                <select id="regYear" required>
+                    <option value="">Select Year Level</option>
+                    <option value="1st Year">1st Year</option>
+                    <option value="2nd Year">2nd Year</option>
+                    <option value="3rd Year">3rd Year</option>
+                    <option value="4th Year">4th Year</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Class Schedule*</label>
+                <div id="scheduleSelector" class="schedule-grid">
+                    <!-- Schedule selectors will be generated here by JS -->
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="regGuardianEmail">Guardian Email*</label>
+                <input type="email" id="regGuardianEmail" placeholder="Enter guardian email" required>
+            </div>
+
+            <div class="button-row">
+                <button id="registerButton">Register Student</button>
+                <button id="clearRegForm" class="secondary">Clear Form</button>
+            </div>
+        </div>
+
+        <!-- Records Tab -->
+        <div id="records" class="tab-content">
+            <h2>Student Records</h2>
+
+            <div class="dropdown-container">
+                <div class="form-group">
+                    <label for="filterCollege">College</label>
+                    <select id="filterCollege">
+                        <option value="">All Colleges</option>
+                        <option value="CEA">College of Engineering and Architecture (CEA)</option>
+                        <option value="CAS">College of Arts and Sciences (CAS)</option>
+                        <option value="CBEA">College of Business and Economic Affairs (CBEA)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="filterProgram">Program</label>
+                    <select id="filterProgram">
+                        <option value="">All Programs</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="filterYear">Year Level</label>
+                    <select id="filterYear">
+                        <option value="">All Years</option>
+                        <option value="1st Year">1st Year</option>
+                        <option value="2nd Year">2nd Year</option>
+                        <option value="3rd Year">3rd Year</option>
+                        <option value="4th Year">4th Year</option>
+                    </select>
+                </div>
+            </div>
+
+            <table id="studentRecordsTable">
+                <thead>
+                    <tr>
+                        <th>Student Number</th>
+                        <th>Name</th>
+                        <th>College</th>
+                        <th>Program</th>
+                        <th>Year Level</th>
+                        <th>Schedule</th>
+                        <th>Guardian Email</th>
+                    </tr>
+                </thead>
+                <tbody id="studentRecordsBody">
+                    <!-- Student records will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+    
+    <!-- Firebase Configuration -->
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://amaz-4e4ef-default-rtdb.firebaseio.com/"
+        };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        // Get a reference to the database service
+        const database = firebase.database();
+    </script>
+</body>
+</html>
