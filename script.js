@@ -676,41 +676,58 @@ async function recordAttendance(type) {
             date: date,
             time: time,
             type: type,
-            notificationSent: 'Pending...'
+            notificationSent: 'Processing...'
         });
 
         const recordKey = attendanceRef.key;
 
         try {
+            let notificationStatus = [];
+
             // Send email
-            const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    studentName: student.name,
-                    type: type,
-                    guardianEmail: student.guardianEmail,
-                    time: time,
-                    date: date
-                })
-            });
+            try {
+                const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    body: JSON.stringify({
+                        studentName: student.name,
+                        type: type,
+                        guardianEmail: student.guardianEmail,
+                        time: time,
+                        date: date
+                    })
+                });
+
+                if (emailResponse.ok) {
+                    notificationStatus.push('Email: Sent');
+                } else {
+                    notificationStatus.push('Email: Failed');
+                }
+            } catch (error) {
+                notificationStatus.push('Email: Failed');
+            }
 
             // Send SMS
-            const message = `Your student ${student.name} has ${type === 'entry' ? 'entered' : 'exited'} the school at ${time} on ${date}.`;
-            const smsResponse = await sendSMS(student.guardianPhone, message);
+            try {
+                const message = `Your student ${student.name} has ${type === 'entry' ? 'entered' : 'exited'} the school at ${time} on ${date}.`;
+                const smsResponse = await sendSMS(student.guardianPhone, message);
 
-            if (emailResponse.ok && smsResponse) {
-                await database.ref(`attendance/${recordKey}`).update({
-                    notificationSent: 'Email and SMS sent'
-                });
-            } else {
-                await database.ref(`attendance/${recordKey}`).update({
-                    notificationSent: 'Failed to send some notifications'
-                });
+                if (smsResponse) {
+                    notificationStatus.push('SMS: Sent');
+                } else {
+                    notificationStatus.push('SMS: Failed');
+                }
+            } catch (error) {
+                notificationStatus.push('SMS: Failed');
             }
+
+            // Update the attendance record with detailed notification status
+            await database.ref(`attendance/${recordKey}`).update({
+                notificationSent: notificationStatus.join(' | ')
+            });
 
             // Check current status and update immediately
             const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
@@ -732,6 +749,7 @@ async function recordAttendance(type) {
             await loadAttendanceHistory(studentNumber);
 
             const messageElement = document.getElementById('studentStatusMessage');
+            messageElement.textContent = `Attendance ${type} recorded successfully! (${notificationStatus.join(' | ')})`;
             messageElement.textContent = `Attendance ${type} recorded successfully!`;
             messageElement.className = 'message success';
             messageElement.style.display = 'block';
