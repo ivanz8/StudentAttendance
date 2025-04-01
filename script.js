@@ -25,6 +25,12 @@ const timeOptionVacant = "Vacant Time";
 const timeOptionEnter = "Enter Time...";
 const DB_URL = "https://amaz-4e4ef-default-rtdb.firebaseio.com";
 
+// Add these constants at the top of your file
+const TWILIO_ACCOUNT_SID = 'AC4530498da95516b2131dbdfc46c25caf';
+const TWILIO_AUTH_TOKEN = '2bcf717148410741f07fcf2e97a5bc16';
+const TWILIO_PHONE_NUMBER = '+12196820673';
+const TWILIO_API_URL = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+
 // Database operations
 const db = {
     async getStudents() {
@@ -234,6 +240,35 @@ document.getElementById('filterCollege').addEventListener('change', function() {
 document.getElementById('filterProgram').addEventListener('change', loadStudentRecords);
 document.getElementById('filterYear').addEventListener('change', loadStudentRecords);
 
+// Add this function to send SMS
+async function sendSMS(to, message) {
+    const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+    
+    try {
+        const response = await fetch(TWILIO_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Basic ${credentials}`
+            },
+            body: new URLSearchParams({
+                'To': to,
+                'From': TWILIO_PHONE_NUMBER,
+                'Body': message
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to send SMS');
+        }
+
+        return true;
+    } catch (error) {
+        console.error('SMS sending failed:', error);
+        return false;
+    }
+}
+
 // Registration Form Submission
 document.getElementById('registerButton').addEventListener('click', async function() {
     const studentNumber = document.getElementById('regStudentNumber').value.trim();
@@ -242,6 +277,7 @@ document.getElementById('registerButton').addEventListener('click', async functi
     const program = document.getElementById('regProgram').value;
     const year = document.getElementById('regYear').value;
     const guardianEmail = document.getElementById('regGuardianEmail').value.trim();
+    const guardianPhone = document.getElementById('regGuardianPhone').value.trim();
 
     // Collect schedule data
     const schedule = {};
@@ -306,7 +342,7 @@ document.getElementById('registerButton').addEventListener('click', async functi
     const messageElement = document.getElementById('registrationMessage');
 
     // Validations
-    if (!studentNumber || !name || !college || !program || !year || !guardianEmail) {
+    if (!studentNumber || !name || !college || !program || !year || !guardianEmail || !guardianPhone) {
         messageElement.textContent = 'Please fill in all required student details.';
         messageElement.className = 'message error';
         messageElement.style.display = 'block';
@@ -321,6 +357,13 @@ document.getElementById('registerButton').addEventListener('click', async functi
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(guardianEmail)) {
         messageElement.textContent = 'Please enter a valid email address.';
+        messageElement.className = 'message error';
+        messageElement.style.display = 'block';
+        return;
+    }
+    const phoneRegex = /^\+[1-9]\d{1,14}$/;
+    if (!phoneRegex.test(guardianPhone)) {
+        messageElement.textContent = 'Please enter a valid phone number in international format (e.g., +639123456789)';
         messageElement.className = 'message error';
         messageElement.style.display = 'block';
         return;
@@ -342,7 +385,8 @@ document.getElementById('registerButton').addEventListener('click', async functi
         program: program,
         year: year,
         schedule: schedule,
-        guardianEmail: guardianEmail
+        guardianEmail: guardianEmail,
+        guardianPhone: guardianPhone
     };
 
     const success = await db.saveStudent(studentNumber, studentData);
@@ -367,6 +411,7 @@ document.getElementById('clearRegForm').addEventListener('click', function() {
     document.getElementById('regProgram').innerHTML = '<option value="">Select Program</option>';
     document.getElementById('regYear').value = '';
     document.getElementById('regGuardianEmail').value = '';
+    document.getElementById('regGuardianPhone').value = '';
     document.getElementById('registrationMessage').style.display = 'none';
     document.getElementById('programContainer').style.display = 'none';
     document.getElementById('yearContainer').style.display = 'none';
@@ -590,7 +635,6 @@ async function recordAttendance(type) {
         return;
     }
 
-    // Set loading state only for the clicked button
     button.disabled = true;
     button.dataset.loading = 'true';
     button.textContent = 'Processing...';
@@ -618,12 +662,11 @@ async function recordAttendance(type) {
             notificationSent: 'Pending...'
         });
 
-        // Get the key of the saved record
         const recordKey = attendanceRef.key;
 
         try {
-            // Send email and handle notification status
-            const response = await fetch('https://nodetendance-production.up.railway.app/send-email', {
+            // Send email
+            const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -638,13 +681,17 @@ async function recordAttendance(type) {
                 })
             });
 
-            if (response.ok) {
+            // Send SMS
+            const message = `Your student ${student.name} has ${type === 'entry' ? 'entered' : 'exited'} the school at ${time} on ${date}.`;
+            const smsResponse = await sendSMS(student.guardianPhone, message);
+
+            if (emailResponse.ok && smsResponse) {
                 await database.ref(`attendance/${recordKey}`).update({
-                    notificationSent: 'Email sent to ' + student.guardianEmail
+                    notificationSent: 'Email and SMS sent'
                 });
             } else {
                 await database.ref(`attendance/${recordKey}`).update({
-                    notificationSent: 'Failed to send email'
+                    notificationSent: 'Failed to send some notifications'
                 });
             }
 
@@ -674,9 +721,9 @@ async function recordAttendance(type) {
             setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
 
         } catch (error) {
-            console.error('Error sending notification:', error);
+            console.error('Error sending notifications:', error);
             await database.ref(`attendance/${recordKey}`).update({
-                notificationSent: 'Failed to send email'
+                notificationSent: 'Failed to send notifications'
             });
         }
     } catch (error) {
@@ -803,7 +850,10 @@ async function loadStudentRecords() {
             <td>${student.program}</td>
             <td>${student.year}</td>
             <td style="white-space: pre-wrap; font-size: 0.85em;">${scheduleDisplay}</td>
-            <td>${student.guardianEmail}</td>
+            <td>
+                Email: ${student.guardianEmail}<br>
+                Phone: ${student.guardianPhone || 'N/A'}
+            </td>
         `;
     });
 }
