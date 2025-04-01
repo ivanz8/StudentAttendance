@@ -492,7 +492,7 @@ async function checkTodayAttendance(studentNumber) {
         const snapshot = await database.ref('attendance').once('value');
         const attendance = snapshot.val() || [];
         
-        const { date } = getPhilippineDateTime(); // Get current PH date
+        const { date } = getPhilippineDateTime();
         
         const records = Array.isArray(attendance) ? attendance : Object.values(attendance);
         
@@ -501,13 +501,19 @@ async function checkTodayAttendance(studentNumber) {
             record.date === date
         );
 
-        const hasEntry = todayRecords.some(record => record.type === 'entry');
-        const hasExit = todayRecords.some(record => record.type === 'exit');
-
-        return { hasEntry, hasExit };
+        // Get the last record for the day
+        const lastRecord = todayRecords[todayRecords.length - 1];
+        
+        // If no records exist or last record was 'exit', allow entry
+        // If last record was 'entry', allow exit
+        return { 
+            hasEntry: lastRecord?.type === 'entry',
+            hasExit: lastRecord?.type === 'exit' || !lastRecord,
+            totalRecords: todayRecords
+        };
     } catch (error) {
         console.error('Error checking attendance:', error);
-        return { hasEntry: false, hasExit: false };
+        return { hasEntry: false, hasExit: true, totalRecords: [] };
     }
 }
 
@@ -522,21 +528,24 @@ function updateAttendanceButtons(hasEntry, hasExit) {
     entryButton.parentNode.replaceChild(newEntryButton, entryButton);
     exitButton.parentNode.replaceChild(newExitButton, exitButton);
 
-    // Update button states and text
-    newEntryButton.disabled = hasEntry;
-    newExitButton.disabled = hasExit;
+    // Enable entry button if last action was exit or no records
+    newEntryButton.disabled = !hasExit;
+    // Enable exit button if last action was entry
+    newExitButton.disabled = !hasEntry;
     
     // Set correct text for each button
     newEntryButton.textContent = 'IN';
     newExitButton.textContent = 'OUT';
 
-    // Add visual feedback and prevent clicks
+    // Add visual feedback
     [newEntryButton, newExitButton].forEach(button => {
         if (button.disabled) {
             button.style.opacity = '0.5';
             button.style.cursor = 'not-allowed';
             button.style.pointerEvents = 'none';
-            button.title = 'Already recorded for today';
+            button.title = button === newEntryButton ? 
+                'Must record exit first' : 
+                'Must record entry first';
             button.dataset.loading = 'false';
         } else {
             button.style.opacity = '1';
@@ -548,10 +557,10 @@ function updateAttendanceButtons(hasEntry, hasExit) {
     });
 
     // Only add event listeners to enabled buttons
-    if (!hasEntry) {
+    if (hasExit) {
         newEntryButton.addEventListener('click', () => recordAttendance('entry'));
     }
-    if (!hasExit) {
+    if (hasEntry) {
         newExitButton.addEventListener('click', () => recordAttendance('exit'));
     }
 }
@@ -598,18 +607,26 @@ async function searchStudent() {
         attendanceStatus.classList.remove('hidden');
 
         // Check current attendance status from database
-        const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
+        const { hasEntry, hasExit, totalRecords } = await checkTodayAttendance(studentNumber);
         
         // Update status text and color
-        if (hasEntry && hasExit) {
-            statusIndicator.textContent = 'Current Status: Completed attendance for today';
-            statusIndicator.style.color = '#155724';
-        } else if (hasEntry) {
-            statusIndicator.textContent = 'Current Status: Entered, pending exit';
-            statusIndicator.style.color = '#856404';
-        } else {
-            statusIndicator.textContent = 'Current Status: Not Present';
+        if (totalRecords.length === 0) {
+            statusIndicator.textContent = 'Current Status: Not Present Today';
             statusIndicator.style.color = '#721c24';
+        } else {
+            const lastRecord = totalRecords[totalRecords.length - 1];
+            if (lastRecord.type === 'entry') {
+                statusIndicator.textContent = 'Current Status: Inside Campus';
+                statusIndicator.style.color = '#155724';
+            } else {
+                statusIndicator.textContent = 'Current Status: Outside Campus';
+                statusIndicator.style.color = '#856404';
+            }
+            
+            // Add total entries/exits for the day
+            const entries = totalRecords.filter(r => r.type === 'entry').length;
+            const exits = totalRecords.filter(r => r.type === 'exit').length;
+            statusIndicator.textContent += ` (Entries: ${entries}, Exits: ${exits})`;
         }
 
         // Update button states
