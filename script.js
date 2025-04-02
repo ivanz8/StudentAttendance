@@ -26,9 +26,9 @@ const timeOptionEnter = "Enter Time...";
 const DB_URL = "https://amaz-4e4ef-default-rtdb.firebaseio.com";
 
 // Add these constants at the top of your file
-const TWILIO_ACCOUNT_SID = 'AC4530498da95516b2131dbdfc46c25caf';
-const TWILIO_AUTH_TOKEN = '2bcf717148410741f07fcf2e97a5bc16';
-const TWILIO_PHONE_NUMBER = '+12196820673';
+const TWILIO_ACCOUNT_SID = 'ACb3fe03839e25f87a6f4fbc37320a7103';
+const TWILIO_AUTH_TOKEN = '5263ddd40e8a84af1b63bc1dd8560c54';
+const TWILIO_PHONE_NUMBER = '+18564468120';
 const TWILIO_API_URL = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
 
 // Database operations
@@ -657,6 +657,7 @@ async function recordAttendance(type) {
     button.textContent = 'Processing...';
 
     try {
+        // Get student number and validate
         const studentNumber = document.getElementById('searchStudentNumber').value.trim();
         const students = await db.getStudents();
         const student = students[studentNumber];
@@ -664,9 +665,10 @@ async function recordAttendance(type) {
             throw new Error('Student not found');
         }
 
+        // Get current date and time
         const { date, time } = getPhilippineDateTime();
-        
-        // First save the attendance record
+
+        // Save initial attendance record
         const attendanceRef = await database.ref('attendance').push({
             studentNumber: studentNumber,
             name: student.name,
@@ -682,75 +684,25 @@ async function recordAttendance(type) {
         const recordKey = attendanceRef.key;
 
         try {
-            let notificationStatus = [];
+            // Send notifications and track their statuses
+            const notificationStatus = await sendNotifications(student, type, date, time);
 
-            // Send email
-            try {
-                const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    body: JSON.stringify({
-                        studentName: student.name,
-                        type: type,
-                        guardianEmail: student.guardianEmail,
-                        time: time,
-                        date: date
-                    })
-                });
-
-                if (emailResponse.ok) {
-                    notificationStatus.push('Email: Sent');
-                } else {
-                    notificationStatus.push('Email: Failed');
-                }
-            } catch (error) {
-                notificationStatus.push('Email: Failed');
-            }
-
-            // Send SMS
-            try {
-                const message = `Your student ${student.name} has ${type === 'entry' ? 'entered' : 'exited'} the school at ${time} on ${date}.`;
-                const smsResponse = await sendSMS(student.guardianPhone, message);
-
-                if (smsResponse) {
-                    notificationStatus.push('SMS: Sent');
-                } else {
-                    notificationStatus.push('SMS: Failed');
-                }
-            } catch (error) {
-                notificationStatus.push('SMS: Failed');
-            }
-
-            // Update the attendance record with detailed notification status
+            // Update the attendance record with notification status
             await database.ref(`attendance/${recordKey}`).update({
                 notificationSent: notificationStatus.join(' | ')
             });
 
-            // Check current status and update immediately
+            // Check and update current attendance status
             const { hasEntry, hasExit } = await checkTodayAttendance(studentNumber);
-            
-            // Update status text and color immediately
-            if (hasEntry && hasExit) {
-                statusIndicator.textContent = 'Current Status: Completed attendance for today';
-                statusIndicator.style.color = '#155724';
-            } else if (hasEntry) {
-                statusIndicator.textContent = 'Current Status: Entered, pending exit';
-                statusIndicator.style.color = '#856404';
-            } else {
-                statusIndicator.textContent = 'Current Status: Not Present';
-                statusIndicator.style.color = '#721c24';
-            }
+            updateStatusIndicator(statusIndicator, hasEntry, hasExit);
 
             // Update buttons and attendance history
             updateAttendanceButtons(hasEntry, hasExit);
             await loadAttendanceHistory(studentNumber);
 
+            // Show success message
             const messageElement = document.getElementById('studentStatusMessage');
             messageElement.textContent = `Attendance ${type} recorded successfully! (${notificationStatus.join(' | ')})`;
-            messageElement.textContent = `Attendance ${type} recorded successfully!`;
             messageElement.className = 'message success';
             messageElement.style.display = 'block';
             setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
@@ -767,7 +719,84 @@ async function recordAttendance(type) {
         messageElement.textContent = 'Error recording attendance. Please try again.';
         messageElement.className = 'message error';
         messageElement.style.display = 'block';
+    } finally {
+        // Re-enable the button regardless of success or failure
+        button.disabled = false;
+        button.dataset.loading = 'false';
+        button.textContent = type === 'entry' ? 'Record Entry' : 'Record Exit';
     }
+}
+
+// Helper function to send notifications
+async function sendNotifications(student, type, date, time) {
+    const notificationStatus = [];
+
+    // Format time and date properly
+    const formattedTime = formatTime(time); // Extract time only (e.g., "7:00 AM")
+    const formattedDate = formatDate(date); // Extract date only (e.g., "4/10/2025")
+
+    // Send email
+    try {
+        const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                studentName: student.name,
+                type: type,
+                guardianEmail: student.guardianEmail,
+                time: formattedTime,
+                date: formattedDate
+            })
+        });
+
+        notificationStatus.push(emailResponse.ok ? 'Email: Sent' : 'Email: Failed');
+    } catch (error) {
+        notificationStatus.push('Email: Failed');
+    }
+
+    // Send SMS
+    try {
+        const message = `Your student ${student.name} has ${type === 'entry' ? 'entered' : 'exited'} the school at ${formattedTime} on ${formattedDate}.`;
+        const smsResponse = await sendSMS(student.guardianPhone, message);
+        notificationStatus.push(smsResponse ? 'SMS: Sent' : 'SMS: Failed');
+    } catch (error) {
+        notificationStatus.push('SMS: Failed');
+    }
+
+    return notificationStatus;
+}
+
+// Helper function to update the status indicator
+function updateStatusIndicator(statusIndicator, hasEntry, hasExit) {
+    if (hasEntry && hasExit) {
+        statusIndicator.textContent = 'Current Status: Completed attendance for today';
+        statusIndicator.style.color = '#155724';
+    } else if (hasEntry) {
+        statusIndicator.textContent = 'Current Status: Entered, pending exit';
+        statusIndicator.style.color = '#856404';
+    } else {
+        statusIndicator.textContent = 'Current Status: Not Present';
+        statusIndicator.style.color = '#721c24';
+    }
+}
+
+// Helper function to format time (e.g., "7:00 AM")
+function formatTime(time) {
+    const dateObj = new Date(time);
+    return dateObj.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
+// Helper function to format date (e.g., "4/10/2025")
+function formatDate(date) {
+    const dateObj = new Date(date);
+    return dateObj.toLocaleDateString('en-US');
 }
 
 // Function to load attendance history for a student
