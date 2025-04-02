@@ -27,7 +27,7 @@ const DB_URL = "https://amaz-4e4ef-default-rtdb.firebaseio.com";
 
 // Add these constants at the top of your file
 const TWILIO_ACCOUNT_SID = 'ACb3fe03839e25f87a6f4fbc37320a7103';
-const TWILIO_AUTH_TOKEN = '5263ddd40e8a84af1b63bc1dd8560c54';
+const TWILIO_AUTH_TOKEN = '00d9b0a3efafae5f451c10e758722cb5';
 const TWILIO_PHONE_NUMBER = '+18564468120';
 const TWILIO_API_URL = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
 
@@ -204,6 +204,7 @@ document.getElementById('regCollege').addEventListener('change', function() {
     const programSelect = document.getElementById('regProgram');
     const programContainer = document.getElementById('programContainer');
     const yearContainer = document.getElementById('yearContainer');
+    
     programSelect.innerHTML = '<option value="">Select Program</option>';
     if (college) {
         collegePrograms[college].forEach(program => {
@@ -369,16 +370,16 @@ document.getElementById('registerButton').addEventListener('click', async functi
         return;
     }
 
-    // Check existing student
+    // Check existing student only if registering a new student
     const students = await db.getStudents();
-    if (students[studentNumber]) {
+    if (!document.getElementById('registerButton').textContent.includes('Save Changes') && students[studentNumber]) {
         messageElement.textContent = 'Student with this number already exists.';
         messageElement.className = 'message error';
         messageElement.style.display = 'block';
         return;
     }
 
-    // Add new student
+    // Add new student or update existing student
     const studentData = {
         name: name,
         college: college,
@@ -918,6 +919,7 @@ async function loadStudentRecords() {
                 Email: ${student.guardianEmail}<br>
                 Phone: ${student.guardianPhone || 'N/A'}
             </td>
+            <td><button class="edit-button" data-student-number="${studentNumber}">Edit</button></td>
         `;
     });
 }
@@ -928,4 +930,244 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('records').classList.contains('active')) {
         loadStudentRecords();
     }
+});
+// Firebase reference
+document.addEventListener('click', async (event) => {
+    if (event.target.classList.contains('edit-button')) {
+        const studentNumber = event.target.getAttribute('data-student-number');
+        const students = await db.getStudents();
+        const student = students[studentNumber];
+        openEditForm(studentNumber, student);
+    }
+});
+
+// Function to switch between tabs
+function switchTab(tabId) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    // Remove active class from all tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    // Show the selected tab content
+    document.getElementById(tabId).classList.add('active');
+
+    // Set the clicked tab as active
+    const activeTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (activeTab) {
+        activeTab.classList.add('active');
+    }
+}
+
+// Open the edit form and populate it with existing data
+function openEditForm(studentNumber, student) {
+    // Switch to the Registration tab
+    switchTab('registration');
+
+    // Populate the form fields
+    document.getElementById('regStudentNumber').value = studentNumber;
+    document.getElementById('regName').value = student.name;
+    document.getElementById('regCollege').value = student.college;
+
+    // Populate the program and year level based on the college
+    updateProgramDropdown(student.college, student.program);
+    document.getElementById('regYear').value = student.year; // Set the year level
+
+    document.getElementById('regGuardianEmail').value = student.guardianEmail || '';
+    document.getElementById('regGuardianPhone').value = student.guardianPhone || '';
+
+    // Generate schedule selectors to reuse the existing design
+    generateScheduleSelectors(); // Call the existing function to create the schedule structure
+
+    // Populate the existing schedule data
+    populateScheduleEntries(student.schedule);
+
+    // Update the Register button to Save Changes
+    const registerButton = document.getElementById('registerButton');
+    registerButton.textContent = 'Save Changes';
+    registerButton.onclick = async () => await saveEditedStudent(studentNumber);
+}
+
+// Function to populate schedule entries based on existing data
+function populateScheduleEntries(schedule) {
+    daysOfWeek.forEach(day => {
+        const entryList = document.getElementById(`schedule-entry-list-${day}`);
+        if (schedule[day] && schedule[day] !== 'Vacant') {
+            schedule[day].forEach(entry => {
+                const entryDiv = document.createElement('div');
+                entryDiv.classList.add('schedule-entry');
+
+                // Subject Input Wrapper
+                const subjectWrapper = document.createElement('div');
+                subjectWrapper.classList.add('input-wrapper');
+                const subjectInput = document.createElement('input');
+                subjectInput.type = 'text';
+                subjectInput.placeholder = 'Subject';
+                subjectInput.classList.add('schedule-subject-input');
+                subjectInput.value = entry.subject; // Set existing subject
+                subjectWrapper.appendChild(subjectInput);
+
+                // Time Selection Wrapper
+                const timeWrapper = document.createElement('div');
+                timeWrapper.classList.add('input-wrapper');
+
+                const timeSelect = document.createElement('select');
+                timeSelect.classList.add('schedule-time-select');
+                timeSelect.innerHTML = `
+                    <option value="${timeOptionEnter}">${timeOptionEnter}</option>
+                    <option value="${timeOptionVacant}">${timeOptionVacant}</option>
+                `;
+
+                // Set the time based on existing data
+                if (entry.time === timeOptionVacant) {
+                    timeSelect.value = timeOptionVacant;
+                } else {
+                    timeSelect.value = timeOptionEnter; // Assuming custom time input is used
+                }
+
+                const timeInputCustom = document.createElement('input');
+                timeInputCustom.type = 'text';
+                timeInputCustom.placeholder = 'e.g., 9-11AM';
+                timeInputCustom.classList.add('schedule-time-input-custom');
+                timeInputCustom.value = entry.time !== timeOptionVacant ? entry.time : ''; // Set existing time
+                timeInputCustom.style.display = entry.time === timeOptionVacant ? 'none' : 'block';
+
+                timeWrapper.appendChild(timeSelect);
+                timeWrapper.appendChild(timeInputCustom);
+
+                timeSelect.addEventListener('change', function() {
+                    if (this.value === timeOptionVacant) {
+                        timeInputCustom.style.display = 'none';
+                        timeInputCustom.value = '';
+                    } else {
+                        timeInputCustom.style.display = 'block';
+                    }
+                });
+
+                const deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.textContent = 'Delete';
+                deleteButton.classList.add('small', 'delete-entry');
+                deleteButton.onclick = function() {
+                    entryDiv.remove();
+                };
+
+                entryDiv.appendChild(subjectWrapper);
+                entryDiv.appendChild(timeWrapper);
+                entryDiv.appendChild(deleteButton);
+
+                entryList.appendChild(entryDiv);
+            });
+        }
+    });
+}
+
+// Save the edited student data
+async function saveEditedStudent(studentNumber) {
+    const updatedData = {
+        name: document.getElementById('regName').value.trim(),
+        college: document.getElementById('regCollege').value,
+        program: document.getElementById('regProgram').value,
+        year: document.getElementById('regYear').value,
+        guardianEmail: document.getElementById('regGuardianEmail').value.trim(),
+        guardianPhone: document.getElementById('regGuardianPhone').value.trim(),
+        schedule: getSelectedSchedule()
+    };
+
+    try {
+        // Update the student data in Firebase
+        await fetch(`${DB_URL}/students/${studentNumber}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedData)
+        });
+
+        alert('Student updated successfully!');
+        loadStudentRecords(); // Refresh the records table
+        clearRegistrationForm(); // Reset the form
+    } catch (error) {
+        console.error('Error updating student:', error);
+        alert('Failed to update student. Please try again.');
+    }
+}
+
+// Helper function to dynamically update the program dropdown
+function updateProgramDropdown(college, selectedProgram) {
+    const programContainer = document.getElementById('programContainer');
+    const programDropdown = document.getElementById('regProgram');
+
+    // Show the program container
+    programContainer.style.display = 'block';
+
+    // Define programs for each college
+    const programs = {
+        CEA: ['BS Computer Science', 'BS Civil Engineering', 'BS Architecture'],
+        CAS: ['BS Psychology', 'BA Communication', 'BS Biology'],
+        CBEA: ['BS Business Administration', 'BS Economics', 'BS Accountancy']
+    };
+
+    // Populate the program dropdown
+    programDropdown.innerHTML = '<option value="">Select Program</option>';
+    if (programs[college]) {
+        programs[college].forEach(program => {
+            const option = document.createElement('option');
+            option.value = program;
+            option.textContent = program;
+            if (program === selectedProgram) {
+                option.selected = true;
+            }
+            programDropdown.appendChild(option);
+        });
+    }
+}
+
+// Register a new student
+async function registerStudent() {
+    const studentNumber = document.getElementById('regStudentNumber').value.trim();
+    const name = document.getElementById('regName').value.trim();
+    const college = document.getElementById('regCollege').value;
+    const program = document.getElementById('regProgram').value;
+    const year = document.getElementById('regYear').value;
+    const guardianEmail = document.getElementById('regGuardianEmail').value.trim();
+    const guardianPhone = document.getElementById('regGuardianPhone').value.trim();
+    const schedule = getSelectedSchedule();
+
+    if (!studentNumber || !name || !college || !program || !year || !guardianEmail || !guardianPhone || schedule.length === 0) {
+        alert('Please fill out all required fields.');
+        return;
+    }
+
+    const newStudent = {
+        name,
+        college,
+        program,
+        year,
+        guardianEmail,
+        guardianPhone,
+        schedule
+    };
+
+    try {
+        await fetch(`${DB_URL}/students/${studentNumber}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newStudent)
+        });
+
+        alert('Student registered successfully!');
+        clearRegistrationForm();
+        loadStudentRecords(); // Refresh the records table
+    } catch (error) {
+        console.error('Error registering student:', error);
+        alert('Failed to register student. Please try again.');
+    }
+}
+
+// Initialize the app
+document.addEventListener('DOMContentLoaded', () => {
+    loadStudentRecords(); // Load student records when the page loads
 });
