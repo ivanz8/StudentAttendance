@@ -706,7 +706,12 @@ async function recordAttendance(type) {
             messageElement.textContent = `Attendance ${type} recorded successfully! (${notificationStatus.join(' | ')})`;
             messageElement.className = 'message success';
             messageElement.style.display = 'block';
-            setTimeout(() => { messageElement.style.display = 'none'; }, 3000);
+            
+            // Reload the page after the message is displayed
+            setTimeout(() => {
+                messageElement.style.display = 'none'; 
+                location.reload(); // Reload the page
+            }, 3000); // Adjust the timeout as needed
 
         } catch (error) {
             console.error('Error sending notifications:', error);
