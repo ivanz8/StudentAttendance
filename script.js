@@ -743,7 +743,7 @@ async function sendNotifications(student, type, date, time) {
 
     // Send email
     try {
-        const emailResponse = await fetch('https://nodetendance-production.up.railway.app/send-email', {
+        const emailResponse = await fetch('https://nodetendance.onrender.com/send-email', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
